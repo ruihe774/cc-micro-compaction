@@ -6,11 +6,11 @@ A Claude Mod that adds **micro-compaction** as `/compact micro`. Instead of aski
 
 When you run `/compact micro`, the plugin rewrites the conversation transcript locally:
 
-- **File reads are elided.** Each successful `Read` tool result is replaced with a short placeholder such as `[file contents elided by compaction: <path>, N lines. Read it again if needed.]` (or `lines A-B` for partial reads). Claude can read the file again on its own whenever it needs the contents.
+- **File reads are elided.** Each successful `Read` tool result is replaced with a short placeholder such as `[file contents elided by compaction: <path>, N lines. Read it again if needed.]` (or `lines A-B` for partial reads). Images and PDFs get one too (`[image elided by compaction: <path>, WxH. …]`, `[PDF elided …]`, `[PDF pages elided …, pages N]`), since their image and document blocks are usually the largest results in a conversation. Claude can read the file again on its own whenever it needs the contents.
 - **Thinking is dropped.** Thinking-only messages are removed from the transcript.
 - **Everything else is kept.** Your prompts, Claude's replies, tool calls, and non-Read tool output stay unchanged, so the structure and wording of the conversation survive.
 
-Some results are deliberately left alone: errored reads, and results already shorter than their placeholder (images, "unchanged since last read" stubs, earlier placeholders). Running `/compact micro` repeatedly is safe, because elision is idempotent.
+Some results are deliberately left alone: errored reads, text results already shorter than their placeholder ("unchanged since last read" stubs, tiny files), and earlier placeholders. Running `/compact micro` repeatedly is safe, because elision is idempotent.
 
 ## When it runs
 

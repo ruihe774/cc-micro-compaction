@@ -11,11 +11,11 @@ const read = (id: string, input: Record<string, unknown>, h: string): SessionMes
   toolUses: [{ tool_use_id: id, tool: 'Read', input }],
   handle: h,
 })
-const result = (id: string, text: string, h: string, isError = false): SessionMessage => ({
+const result = (id: string, text: string, h: string, isError = false, record?: unknown): SessionMessage => ({
   role: 'user',
   text: '',
   toolUses: [],
-  toolResults: [{ tool_use_id: id, text, isError }],
+  toolResults: [{ tool_use_id: id, text, isError, ...(record === undefined ? {} : { result: record }) }],
   handle: h,
 })
 
@@ -61,4 +61,54 @@ test('compacting twice changes nothing more', () => {
   const twice = microCompact(once)
   expect(twice.messages).toEqual(once)
   expect(twice.stats).toEqual({ elided: 0, thinkingDropped: 0 })
+})
+
+// Shapes as session.compact delivered them in a spike (2.1.287): the bulk is an image or
+// document block, `text` is empty or a one-line note
+const media: SessionMessage[] = [
+  read('i1', { file_path: '/w/img.png' }, 'a1'),
+  result('i1', '', 'u1', false, {
+    type: 'image',
+    file: { base64: 'AAAA', type: 'image/png', originalSize: 196992, dimensions: { originalWidth: 256, originalHeight: 256 } },
+  }),
+  read('p1', { file_path: '/w/doc.pdf' }, 'a2'),
+  result('p1', 'PDF file read: /w/doc.pdf (1.1KB)', 'u2', false, {
+    type: 'pdf',
+    file: { filePath: '/w/doc.pdf', base64: 'JVBERi0=', originalSize: 1147 },
+  }),
+  read('p2', { file_path: '/w/doc.pdf', pages: '2' }, 'a3'),
+  result('p2', 'PDF pages extracted: 1 page(s) from /w/doc.pdf (1.1KB)', 'u3', false, {
+    type: 'parts',
+    file: { filePath: '/w/doc.pdf', originalSize: 1147, count: 1, outputDir: '/o' },
+    firstPage: 2,
+  }),
+  read('p3', { file_path: '/w/doc.pdf' }, 'a4'),
+  result('p3', '', 'u4', false, { type: 'parts', file: { filePath: '/w/doc.pdf', originalSize: 1147, count: 3, outputDir: '/o' }, firstPage: 1 }),
+  read('n1', { file_path: '/w/same.ts' }, 'a5'),
+  result('n1', 'File unchanged since last read.', 'u5', false, { type: 'file_unchanged', file: { filePath: '/w/same.ts' } }),
+]
+
+test('images and PDFs are elided whatever their text length', () => {
+  const { messages, stats } = microCompact(media)
+  expect(stats.elided).toBe(4)
+  expect(messages.flatMap(m => m.toolResults ?? []).map(r => r.text)).toEqual([
+    '[image elided by compaction: /w/img.png, 256x256. Read it again if needed.]',
+    '[PDF elided by compaction: /w/doc.pdf. Read it again if needed.]',
+    '[PDF pages elided by compaction: /w/doc.pdf, pages 2. Read it again if needed.]',
+    '[PDF pages elided by compaction: /w/doc.pdf, pages 1-3. Read it again if needed.]',
+    'File unchanged since last read.',
+  ])
+  // Rebuilt without the record, so no image or document block can come back
+  for (const m of messages.slice(0, 8)) expect(m.handle === undefined).toBe(m.role === 'user')
+  expect(messages.flatMap(m => m.toolResults ?? []).slice(0, 4).every(r => r.result === undefined)).toBe(true)
+  expect(messages[9]).toBe(media[9])
+})
+
+test('media placeholders are left alone on a second pass, even with their record', () => {
+  const once = microCompact(media).messages
+  // In case the engine hands the record back with the rebuilt result
+  const withRecords = once.map((m, i) =>
+    m.toolResults ? { ...m, toolResults: m.toolResults.map((r, j) => ({ ...r, result: media[i]!.toolResults![j]!.result })) } : m,
+  )
+  expect(microCompact(withRecords).stats).toEqual({ elided: 0, thinkingDropped: 0 })
 })

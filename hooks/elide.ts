@@ -5,13 +5,17 @@ export type MicroCompactStats = {
   thinkingDropped: number
 }
 
-const PREFIX = '[file contents elided by compaction: '
+const MARKER = ' elided by compaction: '
+const AGAIN = '. Read it again if needed.]'
+// Any of our placeholders, so a second pass leaves them be
+const PLACEHOLDER = /^\[[^\]\n]* elided by compaction: /
 
 // Read numbers its output as `   12\tline`; the first and last numbers give the range read
 const LINE_NO = /^\s*(\d+)\t/
 
-function describeRead(input: Record<string, unknown>, text: string): string {
-  const path = typeof input.file_path === 'string' ? input.file_path : 'unknown file'
+const pathOf = (input: Record<string, unknown>) => (typeof input.file_path === 'string' ? input.file_path : 'unknown file')
+
+function describeText(input: Record<string, unknown>, text: string): string {
   let first: number | null = null
   let last: number | null = null
   for (const line of text.split('\n')) {
@@ -22,7 +26,36 @@ function describeRead(input: Record<string, unknown>, text: string): string {
     last = n
   }
   const range = first === null ? '' : first === 1 ? `, ${last} lines` : `, lines ${first}-${last}`
-  return `${PREFIX}${path}${range}. Read it again if needed.]`
+  return `[file contents${MARKER}${pathOf(input)}${range}${AGAIN}`
+}
+
+/**
+ * The placeholder for a Read whose bulk is an image or document block rather than text
+ * (`result.type` image, pdf, or parts: PDF pages rendered as images), or null for any other.
+ * Their `text` is empty or a one-line note, so length says nothing about their size.
+ */
+function describeMedia(input: Record<string, unknown>, result: unknown): string | null {
+  if (!result || typeof result !== 'object') return null
+  const r = result as { type?: unknown; file?: any; firstPage?: unknown }
+  const path = pathOf(input)
+  switch (r.type) {
+    case 'image': {
+      const d = r.file?.dimensions
+      const size = d?.originalWidth && d?.originalHeight ? `, ${d.originalWidth}x${d.originalHeight}` : ''
+      return `[image${MARKER}${path}${size}${AGAIN}`
+    }
+    case 'pdf':
+      return `[PDF${MARKER}${path}${AGAIN}`
+    case 'parts': {
+      const first = typeof r.firstPage === 'number' ? r.firstPage : null
+      const count = typeof r.file?.count === 'number' ? r.file.count : null
+      const pages =
+        typeof input.pages === 'string' ? input.pages : first !== null && count !== null ? `${first}-${first + count - 1}` : null
+      return `[PDF pages${MARKER}${path}${pages ? `, pages ${pages}` : ''}${AGAIN}`
+    }
+    default:
+      return null
+  }
 }
 
 // Thinking blocks come as assistant messages of their own (one transcript entry per block),
@@ -49,10 +82,13 @@ export function microCompact(messages: readonly Msg[]): { messages: Msg[]; stats
     let changed = false
     const toolResults = m.toolResults?.map(r => {
       const input = reads.get(r.tool_use_id)
-      if (!input || r.isError || r.text.startsWith(PREFIX)) return r
-      const text = describeRead(input, r.text)
-      // Already short (an image, an "unchanged since last read" stub)
-      if (r.text.length <= text.length) return r
+      if (!input || r.isError || PLACEHOLDER.test(r.text)) return r
+      let text = describeMedia(input, r.result)
+      if (text === null) {
+        text = describeText(input, r.text)
+        // Already short (an "unchanged since last read" stub, a tiny file)
+        if (r.text.length <= text.length) return r
+      }
       changed = true
       stats.elided++
       return { tool_use_id: r.tool_use_id, isError: r.isError, text }
