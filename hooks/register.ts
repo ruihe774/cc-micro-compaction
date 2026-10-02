@@ -1,11 +1,10 @@
 import { microCompact } from './elide.ts'
 
 export function register(on: any) {
-  // Only the person's /compact; auto (threshold, prompt too long), plugin and precompute
-  // keep core's summary, which may be needed to fit the window
+  // Only the person's `/compact micro`; any other /compact (with or without instructions)
+  // and auto, plugin, precompute go to core's summary untouched
   on('session.compact', { trigger: 'manual' }, async ($: any, e: any, next: any) => {
-    // `/compact full` falls back to the normal summary
-    if (e.instructions?.trim() === 'full') return next({ ...e, instructions: undefined })
+    if (e.instructions?.trim().toLowerCase() !== 'micro') return next(e)
     const { messages, stats } = microCompact(e.messages)
     $.ui.log(`Micro-compacted: ${stats.elided} file read(s) elided, ${stats.thinkingDropped} thinking block(s) dropped`, { to: 'debug' })
     return { messages }

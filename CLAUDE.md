@@ -1,6 +1,6 @@
 # micro-compaction
 
-A Claude Mod (v2.1.287+) that replaces `/compact` with micro-compaction: Read results become a placeholder (`[file contents elided by compaction: <path>, N lines. Read it again if needed.]` or `lines A-B`), thinking is dropped, and every other message stays as it was. No model call. A mod is a plugin directory whose hooks run as JS/TS middleware.
+A Claude Mod (v2.1.287+) that adds micro-compaction as `/compact micro`: Read results become a placeholder (`[file contents elided by compaction: <path>, N lines. Read it again if needed.]` or `lines A-B`), thinking is dropped, and every other message stays as it was. No model call. A mod is a plugin directory whose hooks run as JS/TS middleware.
 
 ## Layout
 
@@ -14,8 +14,7 @@ A Claude Mod (v2.1.287+) that replaces `/compact` with micro-compaction: Read re
 
 ## Behavior
 
-- Only `trigger: 'manual'` (`/compact`). `auto`, `plugin`, `precompute` go to core's summary, which may be needed to fit the window.
-- `/compact full` falls back to core's summary.
+- Only `trigger: 'manual'` with instructions exactly `micro` (trimmed, any case). Any other `/compact`, with or without instructions, goes to core via `next(e)` unchanged; so do `auto`, `plugin`, `precompute` (core's summary may be needed to fit the window).
 - Only the `Read` tool is elided. Errored reads and results shorter than their placeholder (images, "unchanged since last read" stubs, earlier placeholders) are kept. Bash output is left alone: long output is spilled to a file that is then Read.
 - Elision is idempotent.
 
@@ -31,7 +30,7 @@ A Claude Mod (v2.1.287+) that replaces `/compact` with micro-compaction: Read re
 
 1. `claude plugin validate .` and `claude plugin test`
 2. Typecheck: `npx -p typescript tsc -p .` (TS5097 on `.ts` imports is expected)
-3. End to end needs an interactive session (`/compact` is not available in `-p`): run `claude --model haiku --plugin-dir . ` in tmux with the `CLAUDE*`/`AI_AGENT` env vars unset (except `CLAUDE_CODE_PLUGIN_DIRS`) so it isn't treated as a child session. Read a file, `/compact`, then inspect the session JSONL after the last `compact_boundary`.
+3. End to end needs an interactive session (`/compact` is not available in `-p`): run `claude --model haiku --plugin-dir . ` in tmux with the `CLAUDE*`/`AI_AGENT` env vars unset (except `CLAUDE_CODE_PLUGIN_DIRS`) so it isn't treated as a child session. Read a file, `/compact micro`, then inspect the session JSONL after the last `compact_boundary`.
 
 ## Docs (downloaded; consult before changing APIs)
 

@@ -1,21 +1,21 @@
 # micro-compaction
 
-A Claude Mod that replaces `/compact` with **micro-compaction**. Instead of asking a model to summarize your whole conversation, it trims the two bulkiest and cheapest-to-recover parts of the transcript and leaves everything else exactly as it was.
+A Claude Mod that adds **micro-compaction** as `/compact micro`. Instead of asking a model to summarize your whole conversation, it trims the two bulkiest and cheapest-to-recover parts of the transcript and leaves everything else exactly as it was.
 
 ## What it does
 
-When you run `/compact`, the plugin rewrites the conversation transcript locally:
+When you run `/compact micro`, the plugin rewrites the conversation transcript locally:
 
 - **File reads are elided.** Each successful `Read` tool result is replaced with a short placeholder such as `[file contents elided by compaction: <path>, N lines. Read it again if needed.]` (or `lines A-B` for partial reads). Claude can read the file again on its own whenever it needs the contents.
 - **Thinking is dropped.** Thinking-only messages are removed from the transcript.
 - **Everything else is kept.** Your prompts, Claude's replies, tool calls, and non-Read tool output stay unchanged, so the structure and wording of the conversation survive.
 
-Some results are deliberately left alone: errored reads, and results already shorter than their placeholder (images, "unchanged since last read" stubs, earlier placeholders). Running `/compact` repeatedly is safe, because elision is idempotent.
+Some results are deliberately left alone: errored reads, and results already shorter than their placeholder (images, "unchanged since last read" stubs, earlier placeholders). Running `/compact micro` repeatedly is safe, because elision is idempotent.
 
 ## When it runs
 
-- Only for a manual `/compact`.
-- `/compact full` falls back to Claude Code's normal model-written summary.
+- Only for a manual `/compact micro`.
+- Any other `/compact`, with or without instructions (`/compact keep the plan`), is passed through unchanged to Claude Code's normal model-written summary.
 - Automatic compaction (when the context window fills up) and other compaction triggers also use the normal summary, since that may be needed to fit the window.
 
 ## What it runs, sends, and fetches
@@ -34,7 +34,7 @@ Install it from the Claude plugin directory, or load a local checkout while deve
 claude --plugin-dir /path/to/micro-compaction
 ```
 
-Then use `/compact` as usual.
+Then run `/compact micro`. Plain `/compact` keeps working as usual.
 
 ## Development
 
