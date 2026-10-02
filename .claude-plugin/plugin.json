@@ -1,0 +1,9 @@
+{
+    "description": "Replaces /compact with micro-compaction: elides Read results and strips thinking, keeping the conversation structure",
+    "name": "micro-compaction",
+    "version": "0.1.0",
+    "author": {
+        "name": "Rui He",
+        "email": "ruihe774@outlook.com"
+    }
+}
