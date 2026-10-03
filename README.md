@@ -48,6 +48,17 @@ claude --plugin-dir /path/to/micro-compaction
 
 Then run `/compact micro`. Plain `/compact` keeps working as usual.
 
+## Best practice
+
+- **Lower `bashOutputMaxChars` in your Claude Code config.** Micro-compaction leaves Bash output alone, but long output is spilled to a file that Claude then reads with `Read`, and that read can be elided. The default threshold is 30000 characters; a lower one (for example 10000) spills more output to files, so more of it can be stripped.
+- **Watch prompt cache warmness.** Micro-compaction rewrites earlier messages, which invalidates the prompt cache. Running it often while the cache is still warm is not cost-efficient, so it pays off most when the cache has gone cold anyway or the elided content is large.
+- **Use full compaction when the context is mostly unrelated information.** If a large part of the conversation no longer matters and you don't need to preserve its structure, plain `/compact` (the default) is a better fit, as is `/clear`. Micro-compaction keeps everything except file reads and thinking, so it can't discard irrelevant discussion.
+- **Compact at natural breakpoints.** The best moment is after an exploration or reading phase, when many files have been read but the findings are already in the conversation, and before the next phase begins.
+- **Prefer the `Read` tool for file contents.** Only `Read` results are elided. Output from `cat` in Bash, or from other tools such as MCP tools, web fetches and searches, is kept as is.
+- **Expect re-reads if you keep working on the same files.** Claude re-reads an elided file when it needs it again, which adds back the tokens you saved. Micro-compaction helps most when the files you read are no longer needed.
+- **It shines in image and PDF heavy sessions.** Image and PDF results are usually the largest blocks in a transcript, and they are always elided.
+- **Fall back to full compaction if micro isn't enough.** Prompts, replies, tool calls and non-Read output are kept, so a long conversation can still fill the window. Run `/compact` for a summary, or rely on automatic compaction, which always uses the normal summary.
+
 ## What the hook does
 
 The plugin registers exactly one hook, on the `session.compact` event, with the filter `trigger: 'manual'`. `session.compact` is also the name of the call that Claude Code makes to compact a conversation, so this hook sees the conversation's message list for every manual `/compact`. It changes the call only when the instructions are exactly `micro` (ignoring surrounding whitespace and case): then it returns a rewritten list (file reads elided, thinking dropped) in place of core's model-written summary. For any other `/compact`, with or without instructions, it calls `next` with the call unchanged, so Claude Code compacts as usual. Other triggers (automatic, plugin, precompute) never reach the hook because of its `trigger: 'manual'` filter. The plugin never makes the `session.compact` call itself, and it hooks no other event.
