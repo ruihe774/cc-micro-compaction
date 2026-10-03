@@ -31,7 +31,7 @@ claude plugin marketplace update anthropic-plugin-directory
 claude plugin install micro-compaction@anthropic-plugin-directory
 ```
 
-Inside a session, use `/plugin marketplace add`, `/plugin marketplace update` and `/plugin install` with the same arguments.
+If you prefer using the TUI, inside a session, use `/plugin marketplace add`, `/plugin marketplace update` and `/plugin install` with the same arguments.
 
 To update to a newer release later:
 
