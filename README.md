@@ -18,19 +18,10 @@ Some results are deliberately left alone: errored reads, text results already sh
 - Any other `/compact`, with or without instructions (`/compact keep the plan`), is passed through unchanged to Claude Code's normal model-written summary.
 - Automatic compaction (when the context window fills up) and other compaction triggers also use the normal summary, since that may be needed to fit the window.
 
-## What the hook does
-
-The plugin registers exactly one hook, on the `session.compact` event, with the filter `trigger: 'manual'`. `session.compact` is also the name of the call that Claude Code makes to compact a conversation, so this hook sees the conversation's message list for every manual `/compact`. It changes the call only when the instructions are exactly `micro` (ignoring surrounding whitespace and case): then it returns a rewritten list (file reads elided, thinking dropped) in place of core's model-written summary. For any other `/compact`, with or without instructions, it calls `next` with the call unchanged, so Claude Code compacts as usual. Other triggers (automatic, plugin, precompute) never reach the hook because of its `trigger: 'manual'` filter. The plugin never makes the `session.compact` call itself, and it hooks no other event.
-
-## What it runs, sends, and fetches
-
-- It runs a single `session.compact` hook, written in TypeScript (`hooks/register.ts` and `hooks/elide.ts`), inside Claude Code.
-- It makes **no model calls**, **no network requests**, and **no shell commands**.
-- It does not read or write any files itself, and it uses no credentials, environment variables, or MCP servers.
-- It does not collect, store, or transmit any data. It only edits the in-memory message list that Claude Code hands to the hook, and it writes one debug-level log line with the count of elided reads and dropped thinking blocks.
-- It has no package dependencies and no install step.
 
 ## Installation
+
+Requires Claude Code v2.1.287 or later.
 
 Install it from the official Anthropic plugin directory. In case you haven't added this marketplace yet, add it first, and refresh it to get the latest listing:
 
@@ -57,6 +48,18 @@ claude --plugin-dir /path/to/micro-compaction
 
 Then run `/compact micro`. Plain `/compact` keeps working as usual.
 
+## What the hook does
+
+The plugin registers exactly one hook, on the `session.compact` event, with the filter `trigger: 'manual'`. `session.compact` is also the name of the call that Claude Code makes to compact a conversation, so this hook sees the conversation's message list for every manual `/compact`. It changes the call only when the instructions are exactly `micro` (ignoring surrounding whitespace and case): then it returns a rewritten list (file reads elided, thinking dropped) in place of core's model-written summary. For any other `/compact`, with or without instructions, it calls `next` with the call unchanged, so Claude Code compacts as usual. Other triggers (automatic, plugin, precompute) never reach the hook because of its `trigger: 'manual'` filter. The plugin never makes the `session.compact` call itself, and it hooks no other event.
+
+## What it runs, sends, and fetches
+
+- It runs a single `session.compact` hook, written in TypeScript (`hooks/register.ts` and `hooks/elide.ts`), inside Claude Code.
+- It makes **no model calls**, **no network requests**, and **no shell commands**.
+- It does not read or write any files itself, and it uses no credentials, environment variables, or MCP servers.
+- It does not collect, store, or transmit any data. It only edits the in-memory message list that Claude Code hands to the hook, and it writes one debug-level log line with the count of elided reads and dropped thinking blocks.
+- It has no package dependencies and no install step.
+
 ## Development
 
 The core logic is the pure function `microCompact(messages)` in `hooks/elide.ts`, covered by unit tests in `tests/elide.test.ts`.
@@ -65,9 +68,3 @@ The core logic is the pure function `microCompact(messages)` in `hooks/elide.ts`
 claude plugin validate .
 claude plugin test
 ```
-
-Requires Claude Code v2.1.287 or later.
-
-## License
-
-Released into the public domain under the Unlicense. See [LICENSE](LICENSE).
