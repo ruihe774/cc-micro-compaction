@@ -32,7 +32,24 @@ The plugin registers exactly one hook, on the `session.compact` event, with the 
 
 ## Installation
 
-Install it from the Claude plugin directory, or load a local checkout while developing:
+Install it from the official Anthropic plugin directory. In case you haven't added this marketplace yet, add it first, and refresh it to get the latest listing:
+
+```
+claude plugin marketplace add anthropic-plugin-directory
+claude plugin marketplace update anthropic-plugin-directory
+claude plugin install micro-compaction@anthropic-plugin-directory
+```
+
+Inside a session, use `/plugin marketplace add`, `/plugin marketplace update` and `/plugin install` with the same arguments.
+
+To update to a newer release later:
+
+```
+claude plugin marketplace update anthropic-plugin-directory
+claude plugin update micro-compaction@anthropic-plugin-directory
+```
+
+To try a local checkout while developing, load it directly instead:
 
 ```
 claude --plugin-dir /path/to/micro-compaction

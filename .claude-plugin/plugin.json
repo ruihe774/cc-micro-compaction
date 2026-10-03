@@ -1,10 +1,23 @@
 {
-    "description": "Adds /compact micro: elides Read results and strips thinking, keeping the conversation structure",
-    "name": "micro-compaction",
-    "version": "0.1.0",
-    "author": {
-        "name": "Rui He",
-        "email": "ruihe774@outlook.com"
-    },
-    "repository": "https://github.com/ruihe774/cc-micro-compaction"
+  "author": {
+    "email": "ruihe774@outlook.com",
+    "name": "Rui He"
+  },
+  "description": "Adds `/compact micro`: elides Read results and strips thinking, keeping the conversation structure",
+  "displayName": "micro-compaction",
+  "homepage": "https://github.com/ruihe774/cc-micro-compaction",
+  "keywords": [
+    "compact",
+    "compaction",
+    "micro-compaction",
+    "context",
+    "context-window",
+    "tokens",
+    "mod",
+    "hooks"
+  ],
+  "license": "Unlicense",
+  "name": "micro-compaction",
+  "repository": "https://github.com/ruihe774/cc-micro-compaction",
+  "version": "0.1.1"
 }
