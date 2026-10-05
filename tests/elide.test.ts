@@ -43,7 +43,7 @@ test('Read results are elided with path and line range', () => {
 
 test('thinking-only assistant messages are dropped, everything else stays in order', () => {
   const { messages, stats } = microCompact(transcript)
-  expect(stats).toEqual({ elided: 2, thinkingDropped: 2 })
+  expect(stats).toEqual({ elided: 2, chars: numbered(1, 300).length + numbered(100, 119).length, thinkingDropped: 2 })
   expect(messages.length).toBe(transcript.length - 2)
   expect(messages.map(m => m.handle)).toEqual(['u0', 'a1', undefined, 'a2', undefined, 'a3', 'u3', 'a4', 'u4', 'a5'])
 })
@@ -60,7 +60,7 @@ test('compacting twice changes nothing more', () => {
   const once = microCompact(transcript).messages
   const twice = microCompact(once)
   expect(twice.messages).toEqual(once)
-  expect(twice.stats).toEqual({ elided: 0, thinkingDropped: 0 })
+  expect(twice.stats).toEqual({ elided: 0, chars: 0, thinkingDropped: 0 })
 })
 
 // Shapes as session.compact delivered them in a spike (2.1.287): the bulk is an image or
@@ -110,5 +110,17 @@ test('media placeholders are left alone on a second pass, even with their record
   const withRecords = once.map((m, i) =>
     m.toolResults ? { ...m, toolResults: m.toolResults.map((r, j) => ({ ...r, result: media[i]!.toolResults![j]!.result })) } : m,
   )
-  expect(microCompact(withRecords).stats).toEqual({ elided: 0, thinkingDropped: 0 })
+  expect(microCompact(withRecords).stats).toEqual({ elided: 0, chars: 0, thinkingDropped: 0 })
+})
+
+test('/compact micro toasts the number of reads and chars elided', async ($, on) => {
+  const toasts: string[] = []
+  on('ui.toast', ($, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.log', () => ({ value: undefined }))
+  const answer: any = await ($ as any).session.compact({ trigger: 'manual', instructions: ' Micro ', messages: transcript })
+  expect(answer.messages.length).toBe(transcript.length - 2)
+  expect(toasts).toEqual([`Elided 2 file reads with ${numbered(1, 300).length + numbered(100, 119).length} chars`])
 })

@@ -2,6 +2,8 @@ import type { SessionMessage as Msg } from 'claude-code'
 
 export type MicroCompactStats = {
   elided: number
+  /** Characters of Read result text replaced by placeholders */
+  chars: number
   thinkingDropped: number
 }
 
@@ -72,7 +74,7 @@ export function microCompact(messages: readonly Msg[]): { messages: Msg[]; stats
   const reads = new Map<string, Record<string, unknown>>()
   for (const m of messages) for (const u of m.toolUses) if (u.tool === 'Read') reads.set(u.tool_use_id, u.input)
 
-  const stats: MicroCompactStats = { elided: 0, thinkingDropped: 0 }
+  const stats: MicroCompactStats = { elided: 0, chars: 0, thinkingDropped: 0 }
   const out: Msg[] = []
   for (const m of messages) {
     if (isThinkingOnly(m)) {
@@ -91,6 +93,7 @@ export function microCompact(messages: readonly Msg[]): { messages: Msg[]; stats
       }
       changed = true
       stats.elided++
+      stats.chars += r.text.length
       return { tool_use_id: r.tool_use_id, isError: r.isError, text }
     })
     if (!changed) {
