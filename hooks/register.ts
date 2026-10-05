@@ -6,8 +6,7 @@ export function register(on: any) {
   on('session.compact', { trigger: 'manual' }, async ($: any, e: any, next: any) => {
     if (e.instructions?.trim().toLowerCase() !== 'micro') return next(e)
     const { messages, stats } = microCompact(e.messages)
-    $.ui.log(`Micro-compacted: ${stats.elided} file read(s) elided, ${stats.thinkingDropped} thinking block(s) dropped`, { to: 'debug' })
-    $.ui.toast(`Elided ${stats.elided} file reads with ${stats.chars} chars`)
+    $.ui.log(`Elided ${stats.elided} file reads with ${stats.chars} chars`)
     return { messages }
   })
 }

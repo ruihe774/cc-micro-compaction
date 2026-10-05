@@ -113,14 +113,13 @@ test('media placeholders are left alone on a second pass, even with their record
   expect(microCompact(withRecords).stats).toEqual({ elided: 0, chars: 0, thinkingDropped: 0 })
 })
 
-test('/compact micro toasts the number of reads and chars elided', async ($, on) => {
-  const toasts: string[] = []
-  on('ui.toast', ($, e) => {
-    toasts.push(e.text)
+test('/compact micro logs the number of reads and chars elided', async ($, on) => {
+  const logs: string[] = []
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
     return { value: undefined }
   })
-  on('ui.log', () => ({ value: undefined }))
   const answer: any = await ($ as any).session.compact({ trigger: 'manual', instructions: ' Micro ', messages: transcript })
   expect(answer.messages.length).toBe(transcript.length - 2)
-  expect(toasts).toEqual([`Elided 2 file reads with ${numbered(1, 300).length + numbered(100, 119).length} chars`])
+  expect(logs).toEqual([`Elided 2 file reads with ${numbered(1, 300).length + numbered(100, 119).length} chars`])
 })
