@@ -32,7 +32,20 @@ A Claude Mod (v2.1.287+) that adds micro-compaction as `/compact micro` (and `/c
 
 1. `claude plugin validate .` and `claude plugin test`
 2. Typecheck: `npx -p typescript tsc -p .` (TS5097 on `.ts` imports is expected)
-3. End to end needs an interactive session (`/compact` is not available in `-p`): run `claude --model haiku --plugin-dir . ` in tmux with the `CLAUDE*`/`AI_AGENT` env vars unset (except `CLAUDE_CODE_PLUGIN_DIRS`) so it isn't treated as a child session. Read a file, `/compact micro`, then inspect the session JSONL after the last `compact_boundary`.
+3. End to end needs an interactive session (`/compact` is not available in `-p`); see below. Read or write a file, `/compact micro` (or `tiny`), then inspect the session JSONL after the last `compact_boundary`.
+
+## Running a claude session for spikes and end-to-end tests
+
+- Model: `--model claude-haiku-4-5` (not the `haiku` alias, which resolves to a newer Haiku). Cheap, fast, and enough to exercise the hook.
+- Write the tmux simulation as a script in the scratchpad and run that; don't drive tmux by hand. The script starts `tmux new-session -d -x 200 -y 50 -c <workdir> "env -u ... claude --model claude-haiku-4-5 --plugin-dir <repo> --permission-mode acceptEdits --debug-file <log>/debug.log"`, replays steps from a file (send text, send a key, wait N s, wait until a regex shows in `capture-pane`, capture to a file), captures the final pane, then `C-c` twice and `kill-session`.
+- Submit with `tmux send-keys -t S -l "<text>"`, a short pause, then `send-keys -t S C-m`. `Enter` does not submit.
+- Unset every `CLAUDE*` and `AI_AGENT` env var (except `CLAUDE_CODE_PLUGIN_DIRS`) or it runs as a child session. Auth still works without them; check once with `claude -p "say hi" --model claude-haiku-4-5` and stop if it fails.
+- Use a fresh scratch workdir, not the repo. First launch shows the theme picker and security notes (`C-m` each), then the folder-trust prompt, which defaults to "No, exit": send `Down` then `C-m`. Once trusted, later runs in the same dir go straight to the prompt; allow ~8 s for startup.
+- `--permission-mode acceptEdits` so Write/Edit don't stop on a permission dialog.
+- Ask for a sentinel reply (`reply "done"`) and wait on it with a regex over the pane; after `/compact ...` wait ~15 s.
+- Hook output: `$.ui.log(..., { to: 'debug' })` lines land in the `--debug-file`; a temporary `JSON.stringify(e.messages)` log there is the way to see what `session.compact` receives. Remove such spike logs before committing.
+- Transcript: newest `~/.claude/projects/<workdir path with / as ->/*.jsonl`; skip `attachment` entries when reading what follows the last `compact_boundary`.
+- Launching with `--plugin-dir .` regenerates `.claude-plugin/types/` for the running version.
 
 ## Docs (downloaded; consult before changing APIs)
 
