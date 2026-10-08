@@ -2,9 +2,16 @@ import type { SessionMessage as Msg } from 'claude-code'
 
 export type MicroCompactStats = {
   elided: number
-  /** Characters of Read result text replaced by placeholders */
+  /** Characters of Read results and (tiny) Write/Edit payloads replaced by placeholders */
   chars: number
   thinkingDropped: number
+  /** Write and Edit payloads elided (tiny only), one per call however many fields */
+  writesElided: number
+}
+
+export type CompactOptions = {
+  /** Also elide what Write and Edit calls carry: `content`, `old_string`, `new_string` */
+  tiny?: boolean
 }
 
 const MARKER = ' elided by compaction: '
@@ -60,6 +67,40 @@ function describeMedia(input: Record<string, unknown>, result: unknown): string 
   }
 }
 
+// The bulky fields of each call that tiny elides
+const PAYLOADS: Record<string, readonly string[]> = {
+  Write: ['content'],
+  Edit: ['old_string', 'new_string'],
+}
+
+// What a Write or Edit result appends, as seen in a spike (2.1.294); false once the payload is elided
+const STATE_NOTE = /\s*\(file state is current in your context[^)]*\)/
+
+const lineCount = (s: string) => s.split('\n').length - (s.endsWith('\n') ? 1 : 0)
+
+/**
+ * The input with each payload field replaced by a placeholder, or null when none is
+ * longer than its placeholder (short strings, earlier placeholders)
+ */
+function elidePayload(
+  fields: readonly string[],
+  input: Record<string, unknown>,
+): { input: Record<string, unknown>; chars: number } | null {
+  let out: Record<string, unknown> | null = null
+  let chars = 0
+  for (const f of fields) {
+    const v = input[f]
+    if (typeof v !== 'string' || PLACEHOLDER.test(v)) continue
+    const n = lineCount(v)
+    const text = `[${f}${MARKER}${n} line${n === 1 ? '' : 's'}. Read the file if needed.]`
+    if (v.length <= text.length) continue
+    out ??= { ...input }
+    out[f] = text
+    chars += v.length
+  }
+  return out && { input: out, chars }
+}
+
 // Thinking blocks come as assistant messages of their own (one transcript entry per block),
 // which read as no text and no tool uses
 function isThinkingOnly(m: Msg): boolean {
@@ -67,14 +108,26 @@ function isThinkingOnly(m: Msg): boolean {
 }
 
 /**
- * Elides the results of Read calls and drops thinking. Every other message keeps its
- * handle, so the engine keeps it whole; a user message holding an elided result is rebuilt.
+ * Elides the results of Read calls and drops thinking; with `tiny`, also the payloads of
+ * Write and Edit calls. Every other message keeps its handle, so the engine keeps it whole;
+ * a message holding an elided result or payload is rebuilt.
  */
-export function microCompact(messages: readonly Msg[]): { messages: Msg[]; stats: MicroCompactStats } {
+export function microCompact(
+  messages: readonly Msg[],
+  { tiny = false }: CompactOptions = {},
+): { messages: Msg[]; stats: MicroCompactStats } {
   const reads = new Map<string, Record<string, unknown>>()
-  for (const m of messages) for (const u of m.toolUses) if (u.tool === 'Read') reads.set(u.tool_use_id, u.input)
+  // Write and Edit calls whose payload is elided, by id, with their new input and the chars saved
+  const writes = new Map<string, { input: Record<string, unknown>; chars: number }>()
+  for (const m of messages)
+    for (const u of m.toolUses) {
+      if (u.tool === 'Read') reads.set(u.tool_use_id, u.input)
+      const fields = tiny ? PAYLOADS[u.tool] : undefined
+      const elided = fields && elidePayload(fields, u.input)
+      if (elided) writes.set(u.tool_use_id, elided)
+    }
 
-  const stats: MicroCompactStats = { elided: 0, chars: 0, thinkingDropped: 0 }
+  const stats: MicroCompactStats = { elided: 0, chars: 0, thinkingDropped: 0, writesElided: 0 }
   const out: Msg[] = []
   for (const m of messages) {
     if (isThinkingOnly(m)) {
@@ -82,7 +135,22 @@ export function microCompact(messages: readonly Msg[]): { messages: Msg[]; stats
       continue
     }
     let changed = false
+    const toolUses = m.toolUses.map(u => {
+      const elided = writes.get(u.tool_use_id)
+      if (!elided) return u
+      changed = true
+      stats.writesElided++
+      stats.chars += elided.chars
+      return { ...u, input: elided.input }
+    })
     const toolResults = m.toolResults?.map(r => {
+      if (writes.has(r.tool_use_id)) {
+        // The content is gone from the context, so the result must not say otherwise
+        const text = r.text.replace(STATE_NOTE, '')
+        if (text === r.text) return r
+        changed = true
+        return { tool_use_id: r.tool_use_id, isError: r.isError, text }
+      }
       const input = reads.get(r.tool_use_id)
       if (!input || r.isError || PLACEHOLDER.test(r.text)) return r
       let text = describeMedia(input, r.result)
@@ -101,7 +169,7 @@ export function microCompact(messages: readonly Msg[]): { messages: Msg[]; stats
       continue
     }
     const { handle: _, ...rest } = m
-    out.push({ ...rest, toolResults })
+    out.push({ ...rest, toolUses, ...(toolResults && { toolResults }) })
   }
   return { messages: out, stats }
 }

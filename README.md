@@ -12,9 +12,13 @@ When you run `/compact micro`, the plugin rewrites the conversation transcript l
 
 Some results are deliberately left alone: errored reads, text results already shorter than their placeholder ("unchanged since last read" stubs, tiny files), and earlier placeholders. Running `/compact micro` repeatedly is safe, because elision is idempotent.
 
+### Tiny compaction
+
+`/compact tiny` does everything `/compact micro` does and also elides what `Write` and `Edit` calls carry: a `Write` call's `content` and an `Edit` call's `old_string` and `new_string` become placeholders such as `[content elided by compaction: N lines. Read the file if needed.]`. The file path and the other arguments stay. A payload already shorter than its placeholder is kept. For an elided call, the "file state is current in your context" note on its result is removed, since that no longer holds; Claude reads the file again before working on it. Use it when a session has written or rewritten a lot of code that is now on disk.
+
 ## When it runs
 
-- Only for a manual `/compact micro`.
+- Only for a manual `/compact micro` or `/compact tiny`.
 - Any other `/compact`, with or without instructions (`/compact keep the plan`), is passed through unchanged to Claude Code's normal model-written summary.
 - Automatic compaction (when the context window fills up) and other compaction triggers also use the normal summary, since that may be needed to fit the window.
 
@@ -61,19 +65,19 @@ Then run `/compact micro`. Plain `/compact` keeps working as usual.
 
 ## What the hook does
 
-The plugin registers exactly one hook, on the `session.compact` event, with the filter `trigger: 'manual'`. `session.compact` is also the name of the call that Claude Code makes to compact a conversation, so this hook sees the conversation's message list for every manual `/compact`. It changes the call only when the instructions are exactly `micro` (ignoring surrounding whitespace and case): then it returns a rewritten list (file reads elided, thinking dropped) in place of core's model-written summary. For any other `/compact`, with or without instructions, it calls `next` with the call unchanged, so Claude Code compacts as usual. Other triggers (automatic, plugin, precompute) never reach the hook because of its `trigger: 'manual'` filter. The plugin never makes the `session.compact` call itself, and it hooks no other event.
+The plugin registers exactly one hook, on the `session.compact` event, with the filter `trigger: 'manual'`. `session.compact` is also the name of the call that Claude Code makes to compact a conversation, so this hook sees the conversation's message list for every manual `/compact`. It changes the call only when the instructions are exactly `micro` or `tiny` (ignoring surrounding whitespace and case): then it returns a rewritten list (file reads elided, thinking dropped, and for `tiny` Write and Edit payloads elided) in place of core's model-written summary. For any other `/compact`, with or without instructions, it calls `next` with the call unchanged, so Claude Code compacts as usual. Other triggers (automatic, plugin, precompute) never reach the hook because of its `trigger: 'manual'` filter. The plugin never makes the `session.compact` call itself, and it hooks no other event.
 
 ## What it runs, sends, and fetches
 
 - It runs a single `session.compact` hook, written in TypeScript (`hooks/register.ts` and `hooks/elide.ts`), inside Claude Code.
 - It makes **no model calls**, **no network requests**, and **no shell commands**.
 - It does not read or write any files itself, and it uses no credentials, environment variables, or MCP servers.
-- It does not collect, store, or transmit any data. It only edits the in-memory message list that Claude Code hands to the hook, and it writes one debug-level log line with the count of elided reads and dropped thinking blocks.
+- It does not collect, store, or transmit any data. It only edits the in-memory message list that Claude Code hands to the hook, and it writes one debug-level log line with the count of elided reads (and, for `tiny`, Write and Edit payloads) and dropped thinking blocks.
 - It has no package dependencies and no install step.
 
 ## Development
 
-The core logic is the pure function `microCompact(messages)` in `hooks/elide.ts`, covered by unit tests in `tests/elide.test.ts`.
+The core logic is the pure function `microCompact(messages, { tiny })` in `hooks/elide.ts`, covered by unit tests in `tests/elide.test.ts`.
 
 ```
 claude plugin validate .
