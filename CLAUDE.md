@@ -1,21 +1,22 @@
 # micro-compaction
 
-A Claude Mod (v2.1.287+) that adds micro-compaction as `/compact micro`: Read results become a placeholder (`[file contents elided by compaction: <path>, N lines. Read it again if needed.]` or `lines A-B`; `[image|PDF|PDF pages elided by compaction: …]` for media), thinking is dropped, and every other message stays as it was. No model call. A mod is a plugin directory whose hooks run as JS/TS middleware.
+A Claude Mod (v2.1.287+) that adds micro-compaction as `/compact micro` (and `/compact tiny`, see below): Read results become a placeholder (`[file contents elided by compaction: <path>, N lines. Read it again if needed.]` or `lines A-B`; `[image|PDF|PDF pages elided by compaction: …]` for media), thinking is dropped, and every other message stays as it was. No model call. A mod is a plugin directory whose hooks run as JS/TS middleware.
 
 ## Layout
 
 - `.claude-plugin/plugin.json`: manifest
 - `hooks/hooks.json`: `modules` points to `./register.ts`
 - `hooks/register.ts`: the `session.compact` hook
-- `hooks/elide.ts`: `microCompact(messages)`, a pure function (unit tested)
+- `hooks/elide.ts`: `microCompact(messages, { tiny })`, a pure function (unit tested)
 - `tests/elide.test.ts`: run with `claude plugin test`
 - `.claude-plugin/types/`: generated per version, authoritative, not hand-edited
 - `docs/`: downloaded docs
 
 ## Behavior
 
-- Only `trigger: 'manual'` with instructions exactly `micro` (trimmed, any case). Any other `/compact`, with or without instructions, goes to core via `next(e)` unchanged; so do `auto`, `plugin`, `precompute` (core's summary may be needed to fit the window).
+- Only `trigger: 'manual'` with instructions exactly `micro` or `tiny` (trimmed, any case). Any other `/compact`, with or without instructions, goes to core via `next(e)` unchanged; so do `auto`, `plugin`, `precompute` (core's summary may be needed to fit the window).
 - Only the `Read` tool is elided, by its record's `result.type`: `image`, `pdf` and `parts` (PDF pages rendered as images) always, since their bulk is an image/document block and `text` is empty or a one-line note; `text`, `notebook`, `file_unchanged` or no record only when `text` is longer than the placeholder. Errored reads and earlier placeholders (any `[... elided by compaction: `) are kept. Bash output is left alone: long output is spilled to a file that is then Read.
+- `tiny` = `micro` plus Write/Edit payloads: `content`, `old_string`, `new_string` in the assistant's tool_use input become `[<field> elided by compaction: N lines. Read the file if needed.]` when longer than that (the assistant message is rebuilt without its handle). For an elided call, the result's ` (file state is current in your context — no need to Read it back)` note is stripped, since it is no longer true.
 - Elision is idempotent.
 
 ## How session.compact behaves (verified by a spike on 2.1.287)
@@ -24,6 +25,7 @@ A Claude Mod (v2.1.287+) that adds micro-compaction as `/compact micro`: Read re
 - `e.messages` has one message per transcript entry, i.e. per content block: an assistant turn of thinking + tool_use + text is three messages. Thinking-only messages read as `role: 'assistant'`, `text: ''`, `toolUses: []`; dropping them strips thinking. Seen in `e.messages` with Haiku 4.5 and Sonnet 5.5 (effort low); in stored transcripts (~5000 entries from Opus 5.5, Sonnet 5.5, Sonnet 5, Haiku 4.5) thinking never shares an entry with another block. Low effort often produces no thinking at all.
 - A message returned with its `handle` is kept whole (user prompts carry system-reminder blocks that `text` does not show). One without is rebuilt from `role`, `text`, tool blocks: a rebuilt thinking-only message becomes `(no content)` text, so drop those, don't rebuild them.
 - Recovery works: after a hook compaction, the model re-reads elided files on its own from the placeholder, and an identical Read (same path/offset/limit, file unchanged) returns full content, not the "unchanged since last read" stub. Core resets its read-state cache for hook compactions too. Same for images and PDF pages (Haiku, 2.1.287); a rebuilt result carries only the placeholder text, no image/document block.
+- A rebuilt assistant message keeps its tool_use ids and pairing with the (handled or rebuilt) result; the elided input is what the model sees afterwards, and it re-reads the file before editing it again (spike, Haiku 4.5, 2.1.294). Write/Edit results read `File created successfully at: <path> (file state is current…)` / `The file <path> has been updated successfully. (file state is current…)`.
 - A rebuilt user message's `tool_result` comes from `toolResults[].text`; tool_use ids and pairing with the (handled) assistant message are preserved.
 
 ## Verifying changes

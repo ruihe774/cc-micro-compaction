@@ -43,7 +43,7 @@ test('Read results are elided with path and line range', () => {
 
 test('thinking-only assistant messages are dropped, everything else stays in order', () => {
   const { messages, stats } = microCompact(transcript)
-  expect(stats).toEqual({ elided: 2, chars: numbered(1, 300).length + numbered(100, 119).length, thinkingDropped: 2 })
+  expect(stats).toEqual({ elided: 2, chars: numbered(1, 300).length + numbered(100, 119).length, thinkingDropped: 2, writesElided: 0 })
   expect(messages.length).toBe(transcript.length - 2)
   expect(messages.map(m => m.handle)).toEqual(['u0', 'a1', undefined, 'a2', undefined, 'a3', 'u3', 'a4', 'u4', 'a5'])
 })
@@ -60,7 +60,7 @@ test('compacting twice changes nothing more', () => {
   const once = microCompact(transcript).messages
   const twice = microCompact(once)
   expect(twice.messages).toEqual(once)
-  expect(twice.stats).toEqual({ elided: 0, chars: 0, thinkingDropped: 0 })
+  expect(twice.stats).toEqual({ elided: 0, chars: 0, thinkingDropped: 0, writesElided: 0 })
 })
 
 // Shapes as session.compact delivered them in a spike (2.1.287): the bulk is an image or
@@ -110,7 +110,64 @@ test('media placeholders are left alone on a second pass, even with their record
   const withRecords = once.map((m, i) =>
     m.toolResults ? { ...m, toolResults: m.toolResults.map((r, j) => ({ ...r, result: media[i]!.toolResults![j]!.result })) } : m,
   )
-  expect(microCompact(withRecords).stats).toEqual({ elided: 0, chars: 0, thinkingDropped: 0 })
+  expect(microCompact(withRecords).stats).toEqual({ elided: 0, chars: 0, thinkingDropped: 0, writesElided: 0 })
+})
+
+// Results as Write and Edit returned them in a spike (2.1.294)
+const NOTE = ' (file state is current in your context — no need to Read it back)'
+const call = (id: string, tool: string, input: Record<string, unknown>, h: string): SessionMessage => ({
+  role: 'assistant',
+  text: '',
+  toolUses: [{ tool_use_id: id, tool, input }],
+  handle: h,
+})
+const lines = (n: number) => Array.from({ length: n }, (_, i) => `line ${i + 1}`).join('\n') + '\n'
+const writes: SessionMessage[] = [
+  call('w1', 'Write', { file_path: '/w/a.txt', content: lines(40) }, 'a1'),
+  result('w1', `File created successfully at: /w/a.txt${NOTE}`, 'u1'),
+  call('e1', 'Edit', { file_path: '/w/a.txt', old_string: lines(12), new_string: 'x', replace_all: false }, 'a2'),
+  result('e1', `The file /w/a.txt has been updated successfully.${NOTE}`, 'u2'),
+  call('e2', 'Edit', { file_path: '/w/a.txt', old_string: '20', new_string: 'twenty' }, 'a3'),
+  result('e2', `The file /w/a.txt has been updated successfully.${NOTE}`, 'u3'),
+  read('r1', { file_path: '/w/a.txt' }, 'a4'),
+  result('r1', numbered(1, 100), 'u4'),
+]
+
+test('micro leaves Write and Edit calls alone', () => {
+  const { messages, stats } = microCompact(writes)
+  expect(stats.writesElided).toBe(0)
+  expect(messages.slice(0, 6)).toEqual(writes.slice(0, 6))
+})
+
+test('tiny elides Write and Edit payloads and the note that the file is in context', () => {
+  const { messages, stats } = microCompact(writes, { tiny: true })
+  expect(stats).toEqual({ elided: 1, chars: numbered(1, 100).length + lines(40).length + lines(12).length, thinkingDropped: 0, writesElided: 2 })
+  expect(messages[0]!.handle).toBeUndefined()
+  expect(messages[0]!.toolUses[0]!.input).toEqual({
+    file_path: '/w/a.txt',
+    content: '[content elided by compaction: 40 lines. Read the file if needed.]',
+  })
+  expect(messages[1]!.toolResults![0]!.text).toBe('File created successfully at: /w/a.txt')
+  expect(messages[2]!.toolUses[0]!.input).toEqual({
+    file_path: '/w/a.txt',
+    old_string: '[old_string elided by compaction: 12 lines. Read the file if needed.]',
+    new_string: 'x',
+    replace_all: false,
+  })
+  expect(messages[3]!.toolResults![0]!.text).toBe('The file /w/a.txt has been updated successfully.')
+  // Short payloads are cheaper than a placeholder, so the call and its note stay
+  expect(messages[4]).toBe(writes[4])
+  expect(messages[5]).toBe(writes[5])
+  expect(messages[7]!.toolResults![0]!.text).toBe(
+    '[file contents elided by compaction: /w/a.txt, 100 lines. Read it again if needed.]',
+  )
+})
+
+test('tiny twice changes nothing more', () => {
+  const once = microCompact(writes, { tiny: true }).messages
+  const twice = microCompact(once, { tiny: true })
+  expect(twice.messages).toEqual(once)
+  expect(twice.stats).toEqual({ elided: 0, chars: 0, thinkingDropped: 0, writesElided: 0 })
 })
 
 test('/compact micro logs the number of reads and chars elided', async ($, on) => {
@@ -122,4 +179,14 @@ test('/compact micro logs the number of reads and chars elided', async ($, on) =
   const answer: any = await ($ as any).session.compact({ trigger: 'manual', instructions: ' Micro ', messages: transcript })
   expect(answer.messages.length).toBe(transcript.length - 2)
   expect(logs).toEqual([`Elided 2 file reads with ${numbered(1, 300).length + numbered(100, 119).length} chars`])
+})
+
+test('/compact tiny also logs the write/edit payloads elided', async ($, on) => {
+  const logs: string[] = []
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  await ($ as any).session.compact({ trigger: 'manual', instructions: 'tiny', messages: writes })
+  expect(logs).toEqual([`Elided 1 file reads and 2 write/edit payloads with ${numbered(1, 100).length + lines(40).length + lines(12).length} chars`])
 })
